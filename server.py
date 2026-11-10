@@ -14,6 +14,7 @@ import re
 import secrets
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 from aiohttp import WSMsgType, web
@@ -145,6 +146,11 @@ async def health(request):
     })
 
 
+async def diagnostic(request):
+    page = Path(__file__).with_name("diagnostic.html").read_text(encoding="utf-8")
+    return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-store"})
+
+
 async def relay(request):
     state = request.app[STATE_KEY]
     ws = web.WebSocketResponse(
@@ -269,6 +275,7 @@ def make_app(access_code=None):
     app.router.add_get("/", health)
     app.router.add_get("/health", health)
     app.router.add_get("/relay", relay)
+    app.router.add_get("/diagnostic", diagnostic)
     return app
 
 
@@ -276,3 +283,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     port = int(os.environ.get("PORT", "10000"))
     web.run_app(make_app(), host="0.0.0.0", port=port, access_log=None)
+    
