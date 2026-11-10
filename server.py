@@ -14,7 +14,6 @@ import re
 import secrets
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 
 from aiohttp import WSMsgType, web
@@ -25,6 +24,10 @@ BUILD_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 MAX_SESSIONS = 64
 MAX_PEERS_PER_ROOM = 2
 MAX_MESSAGE_SIZE = 4096
+RELAY_VERSION = "1.1.1-inline-diagnostics"
+
+# This page is embedded: missing diagnostic.html can no longer cause HTTP 500.
+DIAGNOSTIC_HTML = '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Grand-V | Relay test</title><style>body{font:16px system-ui;background:#111827;color:#eee;max-width:620px;margin:35px auto;padding:16px}label,input,button{display:block;width:100%;box-sizing:border-box;margin:12px 0}input,button{padding:12px;border-radius:8px;border:1px solid #888;font-size:16px}input{background:#202938;color:#fff}button{background:#8ac35d;color:#111;border:0}pre{background:#202938;padding:18px;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}code{color:#a3daff}</style></head><body>\n<h2>Проверка Grand-V Relay на Render</h2><p>Проверяем WebSocket <code id="url"></code> и правильность кода. Код не сохраняется и не включается в URL.</p><label>Код RELAY_ACCESS_CODE из Render</label><input type="password" id="key" placeholder="Введи код"><label>Тестовая комната</label><input id="room" value="GrandVTest"><button id="go">Проверить подключение</button><pre id="result">Нажми кнопку проверки.</pre>\n<script>\nconst $=id=>document.getElementById(id), url=(location.protocol===\'https:\'?\'wss://\':\'ws://\')+location.host+\'/relay\';$(\'url\').textContent=url;\n$(\'go\').onclick=()=>{const key=$(\'key\').value,room=$(\'room\').value.trim();if(!key||!/^[a-zA-Z0-9_-]{1,32}$/.test(room)){$(\'result\').textContent=\'Укажи код и корректное название комнаты\';return;}\n$(\'go\').disabled=true; let ws,done=false,success=false;const result=msg=>{$(\'result\').textContent=msg},finish=msg=>{if(done)return;done=true;clearTimeout(timeout);$(\'go\').disabled=false;result(msg)};\nresult(\'Открываю WebSocket…\');const timeout=setTimeout(()=>{finish(\'ТАЙМ-АУТ: нет ответа в течение 12 сек. Проверь сеть/VPN/Render Logs.\');try{ws.close()}catch(e){}},12000);\ntry{ws=new WebSocket(url);ws.onopen=()=>{result(\'WebSocket открыт, проверяю код…\');ws.send(JSON.stringify({type:\'check\',protocol:1,key,room,build:\'grandvdiagnostic\',map:\'gta5\'}))};ws.onmessage=e=>{let data;try{data=JSON.parse(e.data)}catch(x){return finish(\'Не-JSON ответ сервера\')};if(data.type===\'checked\'){success=true;finish(\'УСПЕХ! WebSocket работает, код принят. Игроков: \'+data.players+\'/\'+data.capacity+\'\\nАдрес для GTA: \'+url)}else finish(\'Неожиданный ответ: \'+e.data)};ws.onerror=()=>result(\'Ошибка WebSocket, жду подробности закрытия…\');ws.onclose=e=>{if(!success)finish(\'ОТКАЗ. Код \'+e.code+\'; причина: \'+(e.reason||\'не указана\')+\'\\n1008 обычно означает ошибку кода или параметров. 1006 — вероятный сетевой сбой.\')}}catch(e){finish(\'Ошибка WebSocket: \'+e.message)}};\n</script></body></html>\n'
 
 
 @dataclass
@@ -140,6 +143,7 @@ async def health(request):
     state = request.app[STATE_KEY]
     return web.json_response({
         "status": "ok", "name": "Grand-V Relay", "protocol": 1,
+        "version": RELAY_VERSION, "diagnostic": "/diagnostic",
         "websocket": "/relay", "rooms": len(state.rooms),
         "players": sum(len(room.peers) for room in state.rooms.values()),
         "max_players_per_room": MAX_PEERS_PER_ROOM,
@@ -147,8 +151,10 @@ async def health(request):
 
 
 async def diagnostic(request):
-    page = Path(__file__).with_name("diagnostic.html").read_text(encoding="utf-8")
-    return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-store"})
+    return web.Response(
+        text=DIAGNOSTIC_HTML, content_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 async def relay(request):
