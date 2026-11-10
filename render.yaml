@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: grandv-relay
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /health
+    envVars:
+      - key: RELAY_ACCESS_CODE
+        sync: false
